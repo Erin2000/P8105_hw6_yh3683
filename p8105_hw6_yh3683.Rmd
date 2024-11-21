@@ -1,0 +1,106 @@
+---
+title: "p8105_hw6_yh3683"
+author: "Yining He"
+date: "2024-11-21"
+output: github_document
+---
+```{r include=FALSE}
+library(tidyverse)
+library(rnoaa)
+library(dplyr)
+library(broom)
+library(purrr)
+library(ggplot2)
+library(modelr)
+library(mgcv)
+library(readxl)
+```
+
+
+# Problem1
+```{r echo=FALSE}
+weather_df <- rnoaa::meteo_pull_monitors(
+  c("USW00094728"),
+  var = c("PRCP", "TMIN", "TMAX"),
+  date_min = "2017-01-01",
+  date_max = "2017-12-31"
+) %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10
+  ) %>%
+  select(name, id, everything())
+
+view(weather_df)
+```
+
+```{r echo=FALSE}
+# Set seed for reproducibility
+set.seed(123)
+
+# Generate 5000 bootstrap samples and compute statistics
+bootstrap_results = tibble(strap_number = 1:5000) %>%
+  mutate(
+    # Generate bootstrap samples
+    strap_sample = map(strap_number, ~sample_n(weather_df, size = nrow(weather_df), replace = TRUE)),
+    
+    # Fit models for each bootstrap sample
+    models = map(strap_sample, ~lm(tmax ~ tmin, data = .x)),
+    
+    # Extract R-squared
+    r_squared = map_dbl(models, ~glance(.x)$r.squared),
+    
+    # Extract coefficients and compute log(β0*β1)
+    log_betas = map_dbl(models, ~{
+      coefs = tidy(.x)$estimate
+      log(coefs[1] * coefs[2])
+    })
+  )
+```
+
+```{r echo=FALSE}
+# Create visualizations
+# Distribution of R-squared
+p1 = ggplot(bootstrap_results, aes(x = r_squared)) +
+  geom_density(fill = "lightblue", alpha = 0.5) +
+  labs(
+    title = "Bootstrap Distribution of R-squared",
+    x = "R-squared",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+# Distribution of log(β0*β1)
+p2 = ggplot(bootstrap_results, aes(x = log_betas)) +
+  geom_density(fill = "lightgreen", alpha = 0.5) +
+  labs(
+    title = "Bootstrap Distribution of log(β0*β1)",
+    x = "log(β0*β1)",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+# Display both plots side by side
+library(patchwork)
+p1 + p2
+```
+```{r echo=FALSE}
+# Calculate 95% confidence intervals
+r_squared_ci = quantile(bootstrap_results$r_squared, c(0.025, 0.975))
+log_betas_ci = quantile(bootstrap_results$log_betas, c(0.025, 0.975))
+```
+```{r}
+cat("\n95% Confidence Interval for R-squared:", 
+    "\nLower bound:", round(r_squared_ci[1], 4),
+    "\nUpper bound:", round(r_squared_ci[2], 4))
+```
+
+The bootstrap analysis with 5000 samples of the 2017 Central Park weather data shows R-squared values ranging from 0.89 to 0.93 (95% CI), with a symmetrical distribution centered around 0.91. This indicates that minimum temperature explains approximately 90% of the variation in maximum temperature, demonstrating a remarkably strong predictive relationship.
+
+```{r}
+cat("\n\n95% Confidence Interval for log(β0*β1):", 
+    "\nLower bound:", round(log_betas_ci[1], 4),
+    "\nUpper bound:", round(log_betas_ci[2], 4))
+```
+The log(β0*β1) estimates display a normal distribution centered around 2.0, with a 95% confidence interval of [1.96, 2.06]. This entirely positive and narrow interval confirms a significant and stable positive relationship between minimum and maximum temperatures, providing strong evidence for the reliability of our linear model.
