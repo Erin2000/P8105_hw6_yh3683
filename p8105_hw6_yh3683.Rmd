@@ -173,6 +173,107 @@ ggplot(city_results, aes(x = reorder(city_state, estimate), y = estimate)) +
 The plot shows the estimated odds ratios for solving homicides involving male victims compared to female victims across various U.S. cities. There is notable variation, with some cities (e.g., Fresno, CA, and Minneapolis, MN) showing higher odds of solving male homicides, while others (e.g., New York, NY) show higher odds for female homicides. 
 
 
+#Probelm 3
+```{r}
+birthweight_data <- read_csv("birthweight.csv") %>%
+  mutate(
+    # Convert numeric to factor where appropriate
+    babysex = factor(babysex, levels = c(1, 2), labels = c("Male", "Female")),
+    frace = factor(frace, levels = c(1, 2, 3, 4, 8, 9), 
+                  labels = c("White", "Black", "Asian", "Puerto Rican", "Other", "Unknown")),
+    malform = factor(malform, levels = c(0, 1), labels = c("Absent", "Present")),
+    mrace = factor(mrace, levels = c(1, 2, 3, 4, 8), 
+                  labels = c("White", "Black", "Asian", "Puerto Rican", "Other"))
+  )
+
+# Check for missing data
+missing_summary <- sapply(birthweight_data, function(x) sum(is.na(x)))
+print("Missing values by column:")
+print(missing_summary)
+
+
+my_model <- lm(bwt ~ bhead + blength + gaweeks + smoken + ppbmi + wtgain + 
+               momage + babysex + mrace, data = birthweight_data)
+
+# Create residuals vs fitted plot
+birthweight_data %>%
+  add_predictions(my_model) %>%
+  add_residuals(my_model) %>%
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.3) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Fitted Values", y = "Residuals",
+       title = "Residuals vs Fitted Values Plot") +
+  theme_minimal()
+```
+The residuals plot shows a slight trend and some clustering, suggesting possible model misspecification or unaddressed non-linear relationships. A few outliers are also present, which might influence the model's parameters. Despite these issues, the deviation in the plotted variables is minimal, and most points lie within an acceptable range, indicating that the model's predictions are reasonably unbiased.
+
+
+
+
+
+
+
+```{r echo=FALSE}
+model_1 <- lm(bwt ~ blength + gaweeks, data = birthweight_data)
+
+model_2 <- lm(bwt ~ bhead * blength * babysex, data = birthweight_data)
+
+# Cross-validation function
+cv_rmse <- function(model, data) {
+  predictions <- predict(model, data)
+  sqrt(mean((data$bwt - predictions)^2, na.rm = TRUE))
+}
+
+# Perform cross-validation
+set.seed(123)
+cv_df <- crossv_mc(birthweight_data, n = 100) 
+
+# Calculate RMSE for each model in each fold
+cv_results <- cv_df %>%
+  mutate(
+    my_model = map(train, ~lm(bwt ~ bhead + blength + gaweeks + smoken + ppbmi + 
+                             wtgain + momage + babysex + mrace, data = .x)),
+    model_1  = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+    model_2  = map(train, ~lm(bwt ~ bhead * blength * babysex, data = .x)),
+    
+    rmse_my_model = map2_dbl(my_model, test, ~cv_rmse(model = .x, data = as.data.frame(.y))),
+    rmse_model_1  = map2_dbl(model_1, test, ~cv_rmse(model = .x, data = as.data.frame(.y))),
+    rmse_model_2  = map2_dbl(model_2, test, ~cv_rmse(model = .x, data = as.data.frame(.y)))
+  )
+
+# Summarize cross-validation results
+cv_summary <- cv_results %>%
+  summarize(
+    mean_rmse_my_model = mean(rmse_my_model),
+    mean_rmse_model_1 = mean(rmse_model_1),
+    mean_rmse_model_2 = mean(rmse_model_2),
+    sd_rmse_my_model = sd(rmse_my_model),
+    sd_rmse_model_1 = sd(rmse_model_1),
+    sd_rmse_model_2 = sd(rmse_model_2)
+  )
+
+# Create visualization of cross-validation results
+cv_results %>%
+  select(starts_with("rmse")) %>%
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>%
+  ggplot(aes(x = model, y = rmse)) +
+  geom_violin(aes(fill = model), alpha = 0.5) +
+  geom_boxplot(width = 0.1) +
+  labs(x = "Model", y = "RMSE",
+       title = "Cross-validated Prediction Error Comparison") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Print summary of cross-validation results
+print(cv_summary)
+```
+
 
 
 
