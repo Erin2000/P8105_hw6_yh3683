@@ -36,19 +36,16 @@ view(weather_df)
 ```
 
 ```{r echo=FALSE}
-# Set seed for reproducibility
 set.seed(123)
 
 # Generate 5000 bootstrap samples and compute statistics
 bootstrap_results = tibble(strap_number = 1:5000) %>%
   mutate(
-    # Generate bootstrap samples
+  
     strap_sample = map(strap_number, ~sample_n(weather_df, size = nrow(weather_df), replace = TRUE)),
     
-    # Fit models for each bootstrap sample
     models = map(strap_sample, ~lm(tmax ~ tmin, data = .x)),
     
-    # Extract R-squared
     r_squared = map_dbl(models, ~glance(.x)$r.squared),
     
     # Extract coefficients and compute log(β0*β1)
@@ -60,7 +57,7 @@ bootstrap_results = tibble(strap_number = 1:5000) %>%
 ```
 
 ```{r echo=FALSE}
-# Create visualizations
+
 # Distribution of R-squared
 p1 = ggplot(bootstrap_results, aes(x = r_squared)) +
   geom_density(fill = "lightblue", alpha = 0.5) +
@@ -81,7 +78,6 @@ p2 = ggplot(bootstrap_results, aes(x = log_betas)) +
   ) +
   theme_minimal()
 
-# Display both plots side by side
 library(patchwork)
 p1 + p2
 ```
@@ -90,17 +86,104 @@ p1 + p2
 r_squared_ci = quantile(bootstrap_results$r_squared, c(0.025, 0.975))
 log_betas_ci = quantile(bootstrap_results$log_betas, c(0.025, 0.975))
 ```
-```{r}
+```{r echo=FALSE}
 cat("\n95% Confidence Interval for R-squared:", 
     "\nLower bound:", round(r_squared_ci[1], 4),
     "\nUpper bound:", round(r_squared_ci[2], 4))
 ```
 
-The bootstrap analysis with 5000 samples of the 2017 Central Park weather data shows R-squared values ranging from 0.89 to 0.93 (95% CI), with a symmetrical distribution centered around 0.91. This indicates that minimum temperature explains approximately 90% of the variation in maximum temperature, demonstrating a remarkably strong predictive relationship.
+The bootstrap analysis with 5000 samples of the 2017 Central Park weather data shows R-squared values ranging from 0.89 to 0.93 (95% CI), with a symmetrical distribution centered around 0.91. This indicates that minimum temperature explains approximately 90% of the variation in maximum temperature.
 
-```{r}
+```{r echo=FALSE}
 cat("\n\n95% Confidence Interval for log(β0*β1):", 
     "\nLower bound:", round(log_betas_ci[1], 4),
     "\nUpper bound:", round(log_betas_ci[2], 4))
 ```
-The log(β0*β1) estimates display a normal distribution centered around 2.0, with a 95% confidence interval of [1.96, 2.06]. This entirely positive and narrow interval confirms a significant and stable positive relationship between minimum and maximum temperatures, providing strong evidence for the reliability of our linear model.
+The log(β0*β1) estimates display a normal distribution centered around 2.0, with a 95% confidence interval of [1.96, 2.06]. This entirely positive and narrow interval confirms a significant and stable positive relationship between minimum and maximum temperatures.
+
+# Problem 2
+
+```{r echo=FALSE}
+homicide_data <- read.csv("homicide-data.csv", stringsAsFactors = FALSE, encoding = "latin1")
+
+homicide_data <- homicide_data %>%
+  mutate(city_state = paste(city, state, sep = ", "))
+
+homicide_data <- homicide_data %>%
+  filter(!(city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL")),
+         victim_race %in% c("White", "Black"))
+
+homicide_data <- homicide_data %>%
+  mutate(victim_age = as.numeric(victim_age))
+
+homicide_data <- homicide_data %>%
+  mutate(solved = ifelse(disposition %in% c("Closed by arrest", "Closed without arrest"), 1, 0))
+
+view(homicide_data)
+```
+```{r echo=FALSE}
+baltimore_data <- homicide_data %>%
+  filter(city_state == "Baltimore, MD")
+
+# Fit logistic regression model
+baltimore_glm <- glm(solved ~ victim_age + victim_sex + victim_race, data = baltimore_data, family = "binomial")
+
+# Apply broom::tidy to the glm object
+baltimore_glm_tidy <- broom::tidy(baltimore_glm, conf.int = TRUE, exponentiate = TRUE)
+
+baltimore_or <- baltimore_glm_tidy %>%
+  filter(term == "victim_sexMale") %>%
+  select(estimate, conf.low, conf.high)
+
+print(baltimore_or)
+```
+
+The odds ratio for solving homicides involving male victims in Baltimore is 0.3547, with a confidence interval of 0.2672 to 0.4679. This indicates significantly lower odds of solving male victim cases compared to female victims.
+
+```{r echo=FALSE}
+#Logistic Regression for Each City
+fit_glm <- function(df) {
+  glm(solved ~ victim_age + victim_sex + victim_race, data = df, family = "binomial") %>%
+    broom::tidy(conf.int = TRUE, exponentiate = TRUE) %>%
+    filter(term == "victim_sexMale") %>%
+    select(estimate, conf.low, conf.high)
+}
+
+city_results <- homicide_data %>%
+  group_by(city_state) %>%
+  nest() %>%
+  mutate(model_results = map(data, fit_glm)) %>%
+  unnest(model_results)
+
+view(city_results)
+```
+```{r echo=FALSE}
+city_results <- city_results %>%
+  arrange(estimate)
+ggplot(city_results, aes(x = reorder(city_state, estimate), y = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  coord_flip() +
+  labs(title = "Estimated Odds Ratios for Solving Homicides by City",
+       x = "City",
+       y = "Odds Ratio (Male vs Female)") +
+  theme_minimal()
+```
+
+The plot shows the estimated odds ratios for solving homicides involving male victims compared to female victims across various U.S. cities. There is notable variation, with some cities (e.g., Fresno, CA, and Minneapolis, MN) showing higher odds of solving male homicides, while others (e.g., New York, NY) show higher odds for female homicides. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
