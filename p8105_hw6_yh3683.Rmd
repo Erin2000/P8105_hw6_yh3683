@@ -14,11 +14,12 @@ library(ggplot2)
 library(modelr)
 library(mgcv)
 library(readxl)
+library(rsample)
 ```
 
 
 # Problem1
-```{r echo=FALSE}
+```{r echo=TRUE}
 weather_df <- rnoaa::meteo_pull_monitors(
   c("USW00094728"),
   var = c("PRCP", "TMIN", "TMAX"),
@@ -35,7 +36,7 @@ weather_df <- rnoaa::meteo_pull_monitors(
 view(weather_df)
 ```
 
-```{r echo=FALSE}
+```{r echo=TRUE}
 set.seed(123)
 
 # Generate 5000 bootstrap samples and compute statistics
@@ -56,7 +57,7 @@ bootstrap_results = tibble(strap_number = 1:5000) %>%
   )
 ```
 
-```{r echo=FALSE}
+```{r echo=TRUE}
 
 # Distribution of R-squared
 p1 = ggplot(bootstrap_results, aes(x = r_squared)) +
@@ -103,7 +104,7 @@ The log(β0*β1) estimates display a normal distribution centered around 2.0, wi
 
 # Problem 2
 
-```{r echo=FALSE}
+```{r echo=TRUE, warning=FALSE}
 homicide_data <- read.csv("homicide-data.csv", stringsAsFactors = FALSE, encoding = "latin1")
 
 homicide_data <- homicide_data %>%
@@ -121,7 +122,7 @@ homicide_data <- homicide_data %>%
 
 view(homicide_data)
 ```
-```{r echo=FALSE}
+```{r echo=TRUE, warning=FALSE}
 baltimore_data <- homicide_data %>%
   filter(city_state == "Baltimore, MD")
 
@@ -140,7 +141,7 @@ print(baltimore_or)
 
 The odds ratio for solving homicides involving male victims in Baltimore is 0.3547, with a confidence interval of 0.2672 to 0.4679. This indicates significantly lower odds of solving male victim cases compared to female victims.
 
-```{r echo=FALSE}
+```{r echo=TRUE}
 #Logistic Regression for Each City
 fit_glm <- function(df) {
   glm(solved ~ victim_age + victim_sex + victim_race, data = df, family = "binomial") %>%
@@ -157,7 +158,7 @@ city_results <- homicide_data %>%
 
 view(city_results)
 ```
-```{r echo=FALSE}
+```{r echo=TRUE}
 city_results <- city_results %>%
   arrange(estimate)
 ggplot(city_results, aes(x = reorder(city_state, estimate), y = estimate)) +
@@ -173,108 +174,113 @@ ggplot(city_results, aes(x = reorder(city_state, estimate), y = estimate)) +
 The plot shows the estimated odds ratios for solving homicides involving male victims compared to female victims across various U.S. cities. There is notable variation, with some cities (e.g., Fresno, CA, and Minneapolis, MN) showing higher odds of solving male homicides, while others (e.g., New York, NY) show higher odds for female homicides. 
 
 
-#Probelm 3
+# Probelm 3
+
+Cleaned the data by checking for missing values and converting necessary variables into appropriate types
 ```{r}
-birthweight_data <- read_csv("birthweight.csv") %>%
+birthweight <- read.csv("birthweight.csv") %>%
+  janitor::clean_names() %>%
   mutate(
-    # Convert numeric to factor where appropriate
     babysex = factor(babysex, levels = c(1, 2), labels = c("Male", "Female")),
     frace = factor(frace, levels = c(1, 2, 3, 4, 8, 9), 
-                  labels = c("White", "Black", "Asian", "Puerto Rican", "Other", "Unknown")),
-    malform = factor(malform, levels = c(0, 1), labels = c("Absent", "Present")),
+                   labels = c("White", "Black", "Asian", "Puerto Rican", "Other", "Unknown")),
     mrace = factor(mrace, levels = c(1, 2, 3, 4, 8), 
-                  labels = c("White", "Black", "Asian", "Puerto Rican", "Other"))
+                   labels = c("White", "Black", "Asian", "Puerto Rican", "Other")),
+    malform = factor(malform, levels = c(0, 1), labels = c("Absent", "Present"))
   )
 
-# Check for missing data
-missing_summary <- sapply(birthweight_data, function(x) sum(is.na(x)))
-print("Missing values by column:")
-print(missing_summary)
+# Check for missing values
+sum(is.na(birthweight))
+```
 
+Defined the formula bwt ~ wtgain + gaweeks + smoken based on hypothesized relationships
+```{r}
+my_model <- lm(bwt ~ wtgain + gaweeks + smoken, data = birthweight)
+summary(my_model)
 
-my_model <- lm(bwt ~ bhead + blength + gaweeks + smoken + ppbmi + wtgain + 
-               momage + babysex + mrace, data = birthweight_data)
-
-# Create residuals vs fitted plot
-birthweight_data %>%
+birthweight <- birthweight %>%
   add_predictions(my_model) %>%
-  add_residuals(my_model) %>%
-  ggplot(aes(x = pred, y = resid)) +
-  geom_point(alpha = 0.3) +
+  add_residuals(my_model)
+
+ggplot(birthweight, aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.5) +
   geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
-  labs(x = "Fitted Values", y = "Residuals",
-       title = "Residuals vs Fitted Values Plot") +
+  labs(
+    title = "Residuals vs Fitted Values for My Model",
+    x = "Fitted Values",
+    y = "Residuals"
+  ) +
   theme_minimal()
+
 ```
-The residuals plot shows a slight trend and some clustering, suggesting possible model misspecification or unaddressed non-linear relationships. A few outliers are also present, which might influence the model's parameters. Despite these issues, the deviation in the plotted variables is minimal, and most points lie within an acceptable range, indicating that the model's predictions are reasonably unbiased.
+
+This plot indicates no clear patterns, suggesting that the linear regression model fits the data reasonably well. While there are some outliers, the residuals are generally centered and exhibit homoscedasticity (constant variance).
 
 
+ Compare my model to two others:
+```{r}
+my_model <- lm(bwt ~ wtgain + gaweeks + smoken, data = birthweight)
+second_model <- lm(bwt ~ blength + gaweeks, data = birthweight)
+third_model <- lm(bwt ~ bhead * blength * babysex, data = birthweight)
+
+residuals_my <- residuals(my_model)
+residuals_second <- residuals(second_model)
+residuals_third <- residuals(third_model)
 
 
+residuals_data <- bind_rows(
+  data.frame(Model = "My Model", Residuals = residuals_my),
+  data.frame(Model = "Second Model", Residuals = residuals_second),
+  data.frame(Model = "Third Model", Residuals = residuals_third)
+)
 
-
-
-```{r echo=FALSE}
-model_1 <- lm(bwt ~ blength + gaweeks, data = birthweight_data)
-
-model_2 <- lm(bwt ~ bhead * blength * babysex, data = birthweight_data)
-
-# Cross-validation function
-cv_rmse <- function(model, data) {
-  predictions <- predict(model, data)
-  sqrt(mean((data$bwt - predictions)^2, na.rm = TRUE))
-}
-
-# Perform cross-validation
-set.seed(123)
-cv_df <- crossv_mc(birthweight_data, n = 100) 
-
-# Calculate RMSE for each model in each fold
-cv_results <- cv_df %>%
-  mutate(
-    my_model = map(train, ~lm(bwt ~ bhead + blength + gaweeks + smoken + ppbmi + 
-                             wtgain + momage + babysex + mrace, data = .x)),
-    model_1  = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
-    model_2  = map(train, ~lm(bwt ~ bhead * blength * babysex, data = .x)),
-    
-    rmse_my_model = map2_dbl(my_model, test, ~cv_rmse(model = .x, data = as.data.frame(.y))),
-    rmse_model_1  = map2_dbl(model_1, test, ~cv_rmse(model = .x, data = as.data.frame(.y))),
-    rmse_model_2  = map2_dbl(model_2, test, ~cv_rmse(model = .x, data = as.data.frame(.y)))
-  )
-
-# Summarize cross-validation results
-cv_summary <- cv_results %>%
-  summarize(
-    mean_rmse_my_model = mean(rmse_my_model),
-    mean_rmse_model_1 = mean(rmse_model_1),
-    mean_rmse_model_2 = mean(rmse_model_2),
-    sd_rmse_my_model = sd(rmse_my_model),
-    sd_rmse_model_1 = sd(rmse_model_1),
-    sd_rmse_model_2 = sd(rmse_model_2)
-  )
-
-# Create visualization of cross-validation results
-cv_results %>%
-  select(starts_with("rmse")) %>%
-  pivot_longer(
-    everything(),
-    names_to = "model", 
-    values_to = "rmse",
-    names_prefix = "rmse_"
-  ) %>%
-  ggplot(aes(x = model, y = rmse)) +
-  geom_violin(aes(fill = model), alpha = 0.5) +
-  geom_boxplot(width = 0.1) +
-  labs(x = "Model", y = "RMSE",
-       title = "Cross-validated Prediction Error Comparison") +
+ggplot(residuals_data, aes(x = Model, y = Residuals, fill = Model)) +
+  geom_violin(alpha = 0.7) +
+  labs(
+    title = "Violin Plots of Residuals for Each Model",
+    x = "Model",
+    y = "Residuals"
+  ) +
   theme_minimal() +
-  theme(legend.position = "none")
+  scale_fill_brewer(palette = "Pastel1")
 
-# Print summary of cross-validation results
-print(cv_summary)
 ```
+The Plot shows residuals centered around 0 for all models, indicating unbiased predictions. The Third Model has wider tails, suggesting larger deviations, while My Model and the Second Model have tighter distributions, indicating better performance.
 
 
+```{r}
+# Cross-validation setup
+set.seed(42)
+cv_split <- crossv_mc(birthweight, 100) %>%
+  mutate(
+    train = map(train, as_tibble),
+    test  = map(test, as_tibble)
+  )
+
+# Calculate RMSE for each model
+cv_results <- cv_split %>%
+  mutate(
+    rmse_my = map2_dbl(train, test, ~ sqrt(mean((predict(my_model, newdata = .y) - .y$bwt)^2))),
+    rmse_second = map2_dbl(train, test, ~ sqrt(mean((predict(second_model, newdata = .y) - .y$bwt)^2))),
+    rmse_third = map2_dbl(train, test, ~ sqrt(mean((predict(third_model, newdata = .y) - .y$bwt)^2)))
+  ) %>%
+  pivot_longer(cols = starts_with("rmse"), names_to = "Model", values_to = "RMSE") %>%
+  mutate(Model = str_replace(Model, "rmse_", ""))  # Clean up model names
+
+# Plot RMSE violin plots
+ggplot(cv_results, aes(x = Model, y = RMSE, fill = Model)) +
+  geom_violin(alpha = 0.7) +
+  labs(
+    title = "Violin Plots of RMSE for Each Model",
+    x = "Model",
+    y = "RMSE"
+  ) +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Pastel2")
+
+
+```
+The Second Model (using blength and gaweeks) makes it the most accurate predictor of birthweight. My Model performs moderately with a slightly higher RMSE, while the Third Model has poorer performance likely due to overfitting caused by the inclusion of complex interactions.
 
 
 
