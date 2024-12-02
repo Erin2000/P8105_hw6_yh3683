@@ -128,20 +128,6 @@ view(homicide_data)
 ```
 
 
-```{r echo=TRUE, warning=FALSE}
-baltimore_data <- homicide_data %>%
-  filter(city_state == "Baltimore, MD")
-
-baltimore_model <- glm(solved ~ victim_age + victim_sex + victim_race,
-                       family = binomial(link = "logit"),
-                       data = baltimore_data)
-
-baltimore_results <- tidy(baltimore_model, exponentiate = TRUE, conf.int = TRUE) %>%
-  filter(term == "victim_sexMale")
-
-print(baltimore_results)
-
-```
 ```{r echo=TRUE}
 baltimore_data <- homicide_data %>%
   filter(city_state == "Baltimore, MD")
